@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin Dashboard - Ticketing</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Admin Dashboard</h1>
+    <div id="statusBar">Status: <span id="connStatus">disconnected</span></div>
+    <table id="ticketsTable">
+      <thead><tr><th>ID</th><th>Nama</th><th>Phone</th><th>Ruangan</th><th>Prioritas</th><th>Status</th><th>Waktu</th><th>Aksi</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </main>
+
+  <!-- EDIT POPUP FORM -->
+<div id="editModal" class="modal hidden">
+  <div class="modal-content">
+    <h2>Edit Ticket</h2>
+
+    <form id="editForm">
+      <input type="hidden" name="id" />
+
+      <label>Nama:
+        <input type="text" name="name" required />
+      </label>
+
+      <label>Phone:
+        <input type="text" name="phone" required />
+      </label>
+
+      <label>Ruangan:
+        <input type="text" name="room" required />
+      </label>
+
+      <label>Prioritas:
+        <select name="priority">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </label>
+
+      <label>Status:
+        <select name="status">
+          <option value="open">Open</option>
+          <option value="in_progress">In Progress</option>
+          <option value="resolved">Resolved</option>
+          <option value="closed">Closed</option>
+        </select>
+      </label>
+
+      <label>Deskripsi:
+        <textarea name="description" rows="3"></textarea>
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" id="cancelEdit" class="btn-cancel">Cancel</button>
+        <button type="submit" class="btn-save">Save</button>
+      </div>
+
+    </form>
+  </div>
+</div>
+
+
+  <script>
+    const connStatus = document.getElementById('connStatus');
+    const tbody = document.querySelector('#ticketsTable tbody');
+
+    function escapeHtml(s) { return String(s || '').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+    function renderRow(t) {
+      const tr = document.createElement('tr');
+      tr.dataset.id = t.id;
+      tr.innerHTML = `
+        <td>${t.id}</td>
+        <td>${escapeHtml(t.name)}</td>
+        <td>${escapeHtml(t.phone)}</td>
+        <td>${escapeHtml(t.room)}</td>
+        <td>${escapeHtml(t.priority)}</td>
+        <td>${escapeHtml(t.status)}</td>
+        <td>${new Date(t.created_at).toLocaleString()}</td>
+        <td>
+          <button class="btn-edit">Edit</button>
+          <button class="btn-delete">Delete</button>
+        </td>
+      `;
+      tr.querySelector('.btn-delete').addEventListener('click', () => deleteTicket(t.id));
+      tr.querySelector('.btn-edit').addEventListener('click', () => editTicket(t));
+      return tr;
+    }
+
+    function addOrReplace(ticket) {
+      const existing = tbody.querySelector(`tr[data-id='${ticket.id}']`);
+      const row = renderRow(ticket);
+      if (existing) tbody.replaceChild(row, existing); else tbody.prepend(row);
+    }
+
+    function removeById(id) {
+      const r = tbody.querySelector(`tr[data-id='${id}']`);
+      if (r) r.remove();
+    }
+
+    async function fetchList() {
+      const res = await fetch('/api/tickets');
+      const list = await res.json();
+      tbody.innerHTML = '';
+      list.forEach(t => tbody.appendChild(renderRow(t)));
+    }
+
+    async function deleteTicket(id) {
+      if (!confirm('Hapus tiket #' + id + '?')) return;
+      const res = await fetch('/api/tickets/' + id, { method: 'DELETE' });
+      if (res.status === 204) removeById(id);
+    }
+
+// MODAL POPUP EDIT FORM
+const editModal = document.getElementById("editModal");
+const editForm  = document.getElementById("editForm");
+const cancelBtn = document.getElementById("cancelEdit");
+
+function editTicket(t) {
+  editModal.classList.remove("hidden");
+
+  // isi form
+  editForm.id.value          = t.id;
+  editForm.name.value        = t.name;
+  editForm.phone.value       = t.phone;
+  editForm.room.value        = t.room;
+  editForm.priority.value    = t.priority;
+  editForm.status.value      = t.status;
+  editForm.description.value = t.description || "";
+
+}
+
+cancelBtn.addEventListener("click", () => {
+  editModal.classList.add("hidden");
+});
+
+// ketika SAVE ditekan
+editForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const id = editForm.id.value;
+
+  const payload = {
+    name: editForm.name.value,
+    phone: editForm.phone.value,
+    room: editForm.room.value,
+    priority: editForm.priority.value,
+    status: editForm.status.value,
+    description: editForm.description.value
+  };
+
+  const res = await fetch("/api/tickets/" + id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const updated = await res.json();
+  addOrReplace(updated);
+
+  editModal.classList.add("hidden");
+});
+
+
+    // websocket logic
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/admin');
+    ws.addEventListener('open', () => { connStatus.textContent = 'connected'; });
+    ws.addEventListener('close', () => { connStatus.textContent = 'disconnected'; });
+    ws.addEventListener('message', (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.event === 'init') {
+          tbody.innerHTML = '';
+          msg.payload.forEach(t => addOrReplace(t));
+        } else if (msg.event === 'ticket_created') {
+          addOrReplace(msg.payload);
+        } else if (msg.event === 'ticket_updated') {
+          addOrReplace(msg.payload);
+        } else if (msg.event === 'ticket_deleted') {
+          removeById(msg.payload.id);
+        }
+      } catch (e) { console.error(e); }
+    });
+
+    // initial load
+    fetchList();
+
+
+    
+  </script>
+</body>
+</html>

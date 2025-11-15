@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Submit Ticket</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>Laporkan Keluhan Elektronik</h1>
+    <form id="ticketForm">
+      <label>Nama<input type="text" name="name" required></label>
+      <label>Nomor Telepon<input type="text" name="phone" required></label>
+      <label>Ruangan<input type="text" name="room" required></label>
+      <label>Deskripsi<textarea name="description" rows="4" required></textarea></label>
+      <label>Status
+        <select name="status">
+          <option value="open">Open</option>
+          <option value="in_progress">In Progress</option>
+          <option value="resolved">Resolved</option>
+          <option value="closed">Closed</option>
+        </select>
+      </label>
+      <label>Prioritas
+        <select name="priority">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button type="submit">Kirim Tiket</button>
+      </div>
+    </form>
+
+    <div id="notice" class="notice"></div>
+  </main>
+
+  <script>
+    const form = document.getElementById('ticketForm');
+    const notice = document.getElementById('notice');
+
+    // helper to escape html
+    function escapeHtml(s) { return String(s || '').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      // ambil data form
+      const raw = new FormData(form);
+      const data = {};
+      for (const [k, v] of raw.entries()) data[k] = v;
+
+      try {
+        const res = await fetch('/api/tickets', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(data)
+        });
+
+        if (res.ok) {
+          const ticket = await res.json();
+          notice.textContent = `Tiket dibuat (ID: ${ticket.id}). Terima kasih!`;
+          form.reset();
+        } else {
+          const text = await res.text();
+          notice.textContent = 'Gagal membuat tiket: ' + text;
+        }
+      } catch (err) {
+        console.error(err);
+        notice.textContent = 'Gagal: ' + err.message;
+      }
+    }); // <-- pastikan event listener ditutup dengan ');'
+  </script>
+</body>
+</html>
